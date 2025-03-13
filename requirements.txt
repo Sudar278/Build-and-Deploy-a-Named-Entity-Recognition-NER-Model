@@ -1,4 +1,8 @@
-fastapi
-uvicorn
+flask
 transformers
 torch
+python-dotenv
+streamlit
+requests
+pandas
+gunicorn

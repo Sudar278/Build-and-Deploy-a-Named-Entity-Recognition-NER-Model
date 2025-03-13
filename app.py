@@ -1,42 +1,49 @@
-import os
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-from typing import List, Dict
-from dotenv import load_dotenv
+import streamlit as st
+import requests
+import pandas as pd
 
-load_dotenv()
-app = FastAPI()
+# API Configuration
+API_URL = "http://127.0.0.1:8000/predict"  # Update with your API endpoint
+API_KEY = "f7a6dcb9832b47e8b81c4c5c13f0a2d6"  # Replace with your actual API key
 
-# Load trained model and tokenizer
-MODEL_DIR = "./bert-ner-trained"  # Update with your trained model directory
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-model = AutoModelForTokenClassification.from_pretrained(MODEL_DIR)
-ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+# Streamlit UI
+st.title("🔍 Named Entity Recognition (NER) App")
+st.markdown("Enter text below to extract named entities.")
 
-# Basic API key authentication
-API_KEY = os.getenv("API_KEY")
+# Input Text Box
+user_input = st.text_area("Enter your text here:", height=150)
 
-def verify_api_key(api_key: str):
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return api_key
+# Button to trigger prediction
+if st.button("Analyze Entities"):
+    if user_input.strip():
+        # Send request to API
+        headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+        data = {"text": user_input}
 
-# Request model
-class TextRequest(BaseModel):
-    text: str
+        with st.spinner("Processing..."):
+            try:
+                response = requests.post(API_URL, json=data, headers=headers)
+                result = response.json()
 
-# Prediction endpoint
-@app.post("/predict", dependencies=[Depends(verify_api_key)])
-def predict(request: TextRequest) -> Dict[str, List[Dict]]:
-    text = request.text
-    if not text:
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
-    entities = ner_pipeline(text)
-    return {"entities": entities}
+                if response.status_code == 200:
+                    entities = result.get("entities", [])
 
-# Run the FastAPI app with uvicorn
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+                    if entities:
+                        # Convert to DataFrame for display
+                        df = pd.DataFrame(entities)
+                        df.rename(columns={"word": "Entity", "entity_group": "Category", "score": "Confidence"}, inplace=True)
+                        df["Confidence"] = df["Confidence"].apply(lambda x: round(x, 4))  # Round confidence scores
+                        st.success("Entities Extracted Successfully!")
+                        st.dataframe(df)  # Display as a table
+                    else:
+                        st.warning("No entities found in the text.")
+
+                else:
+                    st.error(f"API Error: {result.get('detail', 'Unknown error')}")
+
+            except requests.exceptions.RequestException as e:
+                st.error(f"Connection Error: {str(e)}")
+
+    else:
+        st.warning("Please enter some text.")
+
